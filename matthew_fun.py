@@ -1,189 +1,214 @@
-# Program to plot from the new CNAPS OPeNDAP server
-#   using Hurricane Matthew as a guinea pig
+# Program to plot DINEOF and Original MODIS SST and Chlor-a for Lindsay Dubbs / NCROEP
+#    Usage: python -W ignore plot.py YYYY MM DD LON LAT
+#    e.g. : python -W ignore plot.py 2017 04 13 -75.70838 34.91828
 #
-# Joseph B Zambon
-# 4 October 2016
+# Joseph B. Zambon
+# jbzambon@ncsu.edu
+# 29 October 2019
+#
+# Using conda, create environment, activate, and run code
+# conda env create -f ncroep.yml 
+# source activate ncroep
+# python -W ignore plot.py YYYY MM DD LON LAT
 
 #Dependencies
-import pandas as pd
 from pydap.client import open_url
-import httplib2
+import numpy as np
+import datetime
+import cmocean
+import sys
 import matplotlib.pyplot as plt
 from mpl_toolkits.basemap import Basemap
-import datetime
-import numpy as np
+from matplotlib.colors import LogNorm
+import matplotlib.colorbar as cb
+import matplotlib.colors as colors
 
-# Put your desired start/end dates in here.
-#                              YYYY,MM,DD,HH
-start_date = datetime.datetime(2016,10, 4, 0)
-end_date = datetime.datetime  (2016,10, 7, 0)
+# Define Date Range
+date_start = str(sys.argv[1]+'-'+sys.argv[2]+'-'+sys.argv[3])
+#date_start = '2017-04-13'
+#date_end   = '2017-04-30'
 
-# For inline plotting
-#get_ipython().magic(u'pylab inline')
+# Define location
+#plot_loc = [-75.70838, 35.91828]
+plot_loc = [np.float(sys.argv[4]),np.float(sys.argv[5])]
 
-# Link OPeNDAP datasets
-wrf_cnaps_url = 'http://oceanus.meas.ncsu.edu:8080/thredds/dodsC/fmrc/useast_coawst_wrf/COAWST-WRF_Forecast_Model_Run_Collection_best.ncd'
-wrf_dataset = open_url(wrf_cnaps_url)
-print('Available WRF data:')
-print(wrf_dataset.keys)
-roms_cnaps_url = 'http://oceanus.meas.ncsu.edu:8080/thredds/dodsC/fmrc/useast_coawst_roms/COAWST-ROMS_SWAN_Forecast_Model_Run_Collection_best.ncd'
-roms_dataset = open_url(roms_cnaps_url)
-print('')
-print('')
-print('Available ROMS/SWAN data:')
-print(roms_dataset.keys)
+# Define SST colorbar range ºC
+sst_range = [16,30]
 
-# Let's ingest the latitude and longitude values
-wrf_lon=np.array(wrf_dataset['lon'])
-wrf_lat=np.array(wrf_dataset['lat'])
-roms_lon=np.array(roms_dataset['lon_rho'])
-roms_lat=np.array(roms_dataset['lat_rho'])
-roms_mask=np.array(roms_dataset['mask_rho'])
+# OPeNDAP linked datasets
+#modis_sst_url = 'http://oceanus.meas.ncsu.edu:8080/thredds/dodsC/secoora/modis/sst.nc'
+#modis_chl_url = 'http://oceanus.meas.ncsu.edu:8080/thredds/dodsC/secoora/modis/chla.nc'
+#dineof_sst_url = 'http://oceanus.meas.ncsu.edu:8080/thredds/dodsC/secoora/dineof/sst.nc'
+#dineof_chl_url = 'http://oceanus.meas.ncsu.edu:8080/thredds/dodsC/secoora/dineof/chla.nc'
+modis_sst_url = 'http://oceanus.meas.ncsu.edu:8080/thredds/dodsC/carolinas/coastwatch/sst.nc'
+modis_chl_url = 'http://oceanus.meas.ncsu.edu:8080/thredds/dodsC/carolinas/coastwatch/chla.nc'
+dineof_sst_url = 'http://oceanus.meas.ncsu.edu:8080/thredds/dodsC/carolinas/coastwatch/dineof_sst.nc'
+dineof_chl_url = 'http://oceanus.meas.ncsu.edu:8080/thredds/dodsC/carolinas/coastwatch/dineof_chla.nc'
+modis_sst_dataset = open_url(modis_sst_url)
+modis_chl_dataset = open_url(modis_chl_url)
+dineof_sst_dataset = open_url(dineof_sst_url)
+dineof_chl_dataset = open_url(dineof_chl_url)
 
-#Find WRF time indices
-wrf_origin_date = datetime.datetime(2016,9,20,0,0,0)
-wrf_time=(np.array(wrf_dataset['time'][:])/24)+datetime.date.toordinal(wrf_origin_date)
-wrf_start_index = np.where(wrf_time==datetime.date.toordinal(start_date))
-wrf_start_index = wrf_start_index[0][0]
-wrf_end_index = np.where(wrf_time==datetime.date.toordinal(end_date))
-wrf_end_index=wrf_end_index[0][0]+1
+date_start = datetime.datetime.strptime(date_start,"%Y-%m-%d")
+#date_end   = datetime.datetime.strptime(date_end,"%Y-%m-%d")
+#num_days = date_end - date_start
 
-# Print ordinal times to check against ROMS/SWAN output (should match)
-print(wrf_time[wrf_start_index:wrf_end_index])
+# For inline plotting in Jupyter Notebook
+#get_ipython().run_line_magic('pylab', 'inline')
 
-#Find ROMS time indices
-roms_origin_date = datetime.datetime(2013,8,30,0,0,0)
-roms_time=(np.array(roms_dataset['time'][:]))/24+datetime.date.toordinal(roms_origin_date)
+parallels = np.arange(0.,90,2.)
+meridians = np.arange(180.,360.,2.)
 
-roms_start_index = np.where(roms_time==datetime.date.toordinal(start_date))
-roms_start_index = roms_start_index[0][0]
-roms_end_index = np.where(roms_time==datetime.date.toordinal(end_date))
-roms_end_index=roms_end_index[0][0]+1
+# For inline plotting in Jupyter Notebook
+#figsize(22,20)
+# For script-based plotting
+fig=plt.figure(frameon=False,figsize=(22,20))
 
-# Print ordinal times to check against WRF output (should match)
-print(roms_time[roms_start_index:roms_end_index])
-
-#Make some plots
-
-fig1=plt.figure(figsize=(30,20),dpi=300)
-#fig1.plt.figsize(30,20)
-
-for t in range(0,roms_end_index-roms_start_index):
-    #t=10
-
-    fig1.clf()
-    
-    #Ingest data
-    slp=np.array(wrf_dataset['slp'][wrf_start_index+t,:,:])
-    slp=np.squeeze(slp)
-    sst=np.array(roms_dataset['temp'][roms_start_index+t,35,:,:])
-    sst=np.ma.array(sst,mask=np.isnan(sst))
-    sst=np.squeeze(sst)
-    u10=np.array(wrf_dataset['u_10m_tr'][wrf_start_index+t,:,:])
-    u10=np.squeeze(u10)
-    v10=np.array(wrf_dataset['v_10m_tr'][wrf_start_index+t,:,:])
-    v10=np.squeeze(v10)
-    wnd_mag = (u10**2 + v10**2 ) **0.5
-    cp=np.array(wrf_dataset['precip_c'][wrf_start_index+t,:,:])
-    cp=np.squeeze(cp)
-    gp=np.array(wrf_dataset['precip_g'][wrf_start_index+t,:,:])
-    gp=np.squeeze(gp)
-    precip = (cp + gp) * 0.0393701  #convert to inches
-    precip=np.ma.array(precip,mask=(precip<0.01))
-    mdbz=np.array(wrf_dataset['mdbz'][wrf_start_index+t,:,:])
-    mdbz=np.squeeze(mdbz)
-    mdbz=np.ma.array(mdbz,mask=(mdbz<10))
-    wave=np.array(roms_dataset['Hwave'][roms_start_index+t,:,:])
-    wave=np.ma.array(wave,mask=np.isnan(wave))
-    wave=np.squeeze(wave)
-
-    date_t=datetime.date.fromordinal(wrf_time[wrf_start_index+t].astype(int))
-    date_hrs=(wrf_time[wrf_start_index+t]-wrf_time[wrf_start_index+t].astype(int))*24
-    date_hrs=date_hrs.astype(int)
-    fore_valid = datetime.datetime(date_t.year,date_t.month,date_t.day,date_hrs)
-
-    plt.suptitle('Forecast Valid: ' + fore_valid.strftime("%d %b %Y %H"+"Z UTC"),fontsize=36,family='Helvetica')
-
-    plt.subplot(2,3,1)
+#for t in range(0,num_days.days+1):
+for t in range(0,1):
+    #Assume date ranges are congruent among datasets, just use modis_sst
+    time=np.array(modis_sst_dataset['time'])
+    t_ind = np.where(time==datetime.datetime.strftime((date_start + datetime.timedelta(t)),"%Y-%m-%d"+"T00:00:00Z"))
+    t_ind = t_ind[0]
+    if t_ind.size == 0:
+        print('No matching time in dataset found.')
+        exit(1)
+    curr_date = date_start + datetime.timedelta(t)
+    # Assume coordinates are congruent among datasets, just use modis_sst
+    lon = np.array(modis_sst_dataset['lon'][:])
+    lat = np.array(modis_sst_dataset['lat'][:])
+    # Locate grid point closest to prescribed lat/lon
+    diff_lon = lon - plot_loc[0]
+    diff_lat = lat - plot_loc[1]
+    min_lon = np.argmin(abs(diff_lon))
+    min_lat = np.argmin(abs(diff_lat))
+    # OPeNDAP linked datasets
+    raw_sst = modis_sst_dataset['sst']
+    raw_sst = raw_sst['sst'][int(t_ind),:,:]
+    raw_sst = np.squeeze(raw_sst)
+    raw_sst = np.ma.filled(raw_sst.astype(float), np.nan)
+    raw_sst[raw_sst<-5]=np.nan; raw_sst= np.ma.array(raw_sst,mask=np.isnan(raw_sst))
+    if np.isnan(raw_sst[min_lat,min_lon]) == 0:
+        raw_sst_loc = str(round(raw_sst[min_lat,min_lon],1))
+    else:
+        raw_sst_loc = 'NaN'
+    # Raw Chlor-a
+    # OPeNDAP linked datasets
+    raw_chla = modis_chl_dataset['chlor_a']
+    raw_chla = raw_chla['chlor_a'][int(t_ind),:,:]
+    raw_chla = np.squeeze(raw_chla)
+    raw_chla = np.ma.filled(raw_chla.astype(float), np.nan)
+    raw_chla[raw_chla<0]=np.nan; raw_chla= np.ma.array(raw_chla,mask=np.isnan(raw_chla))
+    if np.isnan(raw_chla[min_lat,min_lon]) == 0:
+        raw_chla_loc = str(round(raw_chla[min_lat,min_lon],3))
+    else:
+        raw_chla_loc = 'NaN'
+    # DINEOF SST
+    # OPeNDAP linked datasets
+    dineof_sst = dineof_sst_dataset['sst']
+    dineof_sst = dineof_sst['sst'][int(t_ind),:,:]
+    dineof_sst = np.squeeze(dineof_sst)
+    dineof_sst = np.ma.filled(dineof_sst.astype(float), np.nan)
+    dineof_sst[dineof_sst<-5]=np.nan; dineof_sst= np.ma.array(dineof_sst,mask=np.isnan(dineof_sst))
+    if np.isnan(dineof_sst[min_lat,min_lon]) == 0:
+        dineof_sst_loc = str(round(dineof_sst[min_lat,min_lon],1))
+    else:
+        dineof_sst_loc = 'NaN '
+    # Raw SST
+    # OPeNDAP linked datasets
+    dineof_chla = dineof_chl_dataset['chlor_a']
+    dineof_chla = dineof_chla['chlor_a'][int(t_ind),:,:]
+    dineof_chla = np.squeeze(dineof_chla)
+    dineof_chla = np.ma.filled(dineof_chla.astype(float), np.nan)
+    dineof_chla[dineof_chla<0]=np.nan; dineof_chla= np.ma.array(dineof_chla,mask=np.isnan(dineof_chla))
+    if np.isnan(dineof_chla[min_lat,min_lon]) == 0:
+        dineof_chla_loc = str(round(dineof_chla[min_lat,min_lon],3))
+    else:
+        dineof_chla_loc = 'NaN'
+    plt.clf()
+    plt.suptitle('1km Observed and Cloud Free: ' + curr_date.strftime("%d %b %Y %H"+"UTC"),fontsize=36,family='Helvetica')
+    # Raw SST
+    plt.subplot(2,2,1)
     map = Basemap(projection='merc',
-        resolution='c',lat_0=((np.max(wrf_lat)-np.min(wrf_lat))/2),
-        lon_0=((np.max(wrf_lon)-np.min(wrf_lon))/2),
-        llcrnrlon=np.min(wrf_lon),llcrnrlat=np.min(wrf_lat),
-        urcrnrlon=np.max(wrf_lon),urcrnrlat=np.max(wrf_lat))
+      resolution='i',lat_0=((np.max(lat)-np.min(lat))/2),
+      lon_0=((np.max(lon)-np.min(lon))/2),
+      llcrnrlon=np.min(lon),llcrnrlat=np.min(lat),
+      urcrnrlon=np.max(lon),urcrnrlat=np.max(lat))
     map.drawcoastlines()
     map.drawcountries()
     map.drawstates()
-    map.pcolormesh(wrf_lon,wrf_lat,slp[:,:],cmap='jet',vmin=950,vmax=1030,latlon='true')
-    map.colorbar(location='bottom')
-    plt.title(('Sea Level Pressure (hPa)'),fontsize=24,family='Helvetica')
-
-    plt.subplot(2,3,2)
+    [X,Y] = np.meshgrid(lon,lat)
+    map.pcolormesh(X,Y,raw_sst[:,:],cmap=cmocean.cm.thermal,                   vmin=sst_range[0],vmax=sst_range[1],latlon='true')
+    map.drawparallels(parallels,labels=[1,0,0,0],fontsize=18)
+    map.drawmeridians(meridians,labels=[0,0,0,1],fontsize=18)
+    x_loc,y_loc = map(plot_loc[0], plot_loc[1])
+    map.plot(x_loc, y_loc, 'ro', fillstyle='none',markersize=24)   #location
+    tx_loc,ty_loc = map(-79.9, 37.5)
+    plt.text(tx_loc,ty_loc,''.join([raw_sst_loc,'$^\circ$C']),fontsize=36,fontweight='bold',color='r')   #location
+    plt.title(('Original SST ($^\circ$C)'),fontsize=24,family='Helvetica')
+    cbar=map.colorbar(location='right',ticks=np.arange(sst_range[0],sst_range[1]+0.01,2))
+    cbar.ax.tick_params(labelsize=20)
+    # DINEOF SST
+    plt.subplot(2,2,2)
     map = Basemap(projection='merc',
-        resolution='c',lat_0=((np.max(wrf_lat)-np.min(wrf_lat))/2),
-        lon_0=((np.max(wrf_lon)-np.min(wrf_lon))/2),
-        llcrnrlon=np.min(wrf_lon),llcrnrlat=np.min(wrf_lat),
-        urcrnrlon=np.max(wrf_lon),urcrnrlat=np.max(wrf_lat))
+      resolution='i',lat_0=((np.max(lat)-np.min(lat))/2),
+      lon_0=((np.max(lon)-np.min(lon))/2),
+      llcrnrlon=np.min(lon),llcrnrlat=np.min(lat),
+      urcrnrlon=np.max(lon),urcrnrlat=np.max(lat))
     map.drawcoastlines()
     map.drawcountries()
     map.drawstates()
-    map.pcolormesh(roms_lon,roms_lat,sst[:,:],cmap='jet',vmin=5,vmax=32,latlon='true')
-    map.colorbar(location='bottom')
-    plt.title(('Sea Surface Temperature ($^\circ$C)'),fontsize=24,family='Helvetica')
-
-    plt.subplot(2,3,3)
+    map.pcolormesh(X,Y,dineof_sst[:,:],cmap=cmocean.cm.thermal,                   vmin=sst_range[0],vmax=sst_range[1],latlon='true')
+    map.drawparallels(parallels,labels=[1,0,0,0],fontsize=18)
+    map.drawmeridians(meridians,labels=[0,0,0,1],fontsize=18)
+    x_loc,y_loc = map(plot_loc[0], plot_loc[1])
+    map.plot(x_loc, y_loc, 'ro', fillstyle='none',markersize=24)   #location
+    tx_loc,ty_loc = map(-79.9, 37.5)
+    plt.text(tx_loc,ty_loc,''.join([dineof_sst_loc,'$^\circ$C']),fontsize=36,fontweight='bold',color='r')   #location
+    plt.title(('Cloud Free SST ($^\circ$C)'),fontsize=24,family='Helvetica')
+    cbar=map.colorbar(location='right',ticks=np.arange(sst_range[0],sst_range[1]+0.01,2))
+    cbar.ax.tick_params(labelsize=20)
+    # Raw Chlorophyll-a
+    plt.subplot(2,2,3)
     map = Basemap(projection='merc',
-        resolution='c',lat_0=((np.max(wrf_lat)-np.min(wrf_lat))/2),
-        lon_0=((np.max(wrf_lon)-np.min(wrf_lon))/2),
-        llcrnrlon=np.min(wrf_lon),llcrnrlat=np.min(wrf_lat),
-        urcrnrlon=np.max(wrf_lon),urcrnrlat=np.max(wrf_lat))
+      resolution='i',lat_0=((np.max(lat)-np.min(lat))/2),
+      lon_0=((np.max(lon)-np.min(lon))/2),
+      llcrnrlon=np.min(lon),llcrnrlat=np.min(lat),
+      urcrnrlon=np.max(lon),urcrnrlat=np.max(lat))
     map.drawcoastlines()
     map.drawcountries()
     map.drawstates()
-    map.pcolormesh(wrf_lon,wrf_lat,wnd_mag[:,:],cmap='jet',vmin=0,vmax=30,latlon='true')
-    map.quiver(wrf_lon[::10,::10],wrf_lat[::10,::10],u10[::10,::10],v10[::10,::10],latlon='true',               width=0.001,scale=1 / 0.001)
-    map.colorbar(location='bottom')
-    plt.title(('Wind Speed (m/s) + Direction'),fontsize=24,family='Helvetica')
-
-    plt.subplot(2,3,4)
+    map.pcolormesh(X,Y,raw_chla[:,:],norm=LogNorm(vmin=0.01, vmax=100),                    cmap=cmocean.cm.algae,latlon='true')
+    map.drawparallels(parallels,labels=[1,0,0,0],fontsize=18)
+    map.drawmeridians(meridians,labels=[0,0,0,1],fontsize=18)
+    x_loc,y_loc = map(plot_loc[0], plot_loc[1])
+    map.plot(x_loc, y_loc, 'ro', fillstyle='none',markersize=24)   #location
+    tx_loc,ty_loc = map(-79.9, 37.5)
+    plt.text(tx_loc,ty_loc,''.join([raw_chla_loc,'mg/m$^3$']),fontsize=36,fontweight='bold',color='r')   #location
+    plt.title(('Original Chl-a (mg/m$^3$)'),fontsize=24,family='Helvetica')
+    cbar=map.colorbar(location='right',norm=LogNorm(vmin=0.01, vmax=100),                      ticks=[0.01,0.1,1,10,100])
+    cbar.ax.tick_params(labelsize=20)
+    # DINEOF Chlorophyll-a
+    plt.subplot(2,2,4)
+    #ax = fig.add_subplot(2,2,4)
     map = Basemap(projection='merc',
-        resolution='c',lat_0=((np.max(wrf_lat)-np.min(wrf_lat))/2),
-        lon_0=((np.max(wrf_lon)-np.min(wrf_lon))/2),
-        llcrnrlon=np.min(wrf_lon),llcrnrlat=np.min(wrf_lat),
-        urcrnrlon=np.max(wrf_lon),urcrnrlat=np.max(wrf_lat))
+      resolution='i',lat_0=((np.max(lat)-np.min(lat))/2),
+      lon_0=((np.max(lon)-np.min(lon))/2),
+      llcrnrlon=np.min(lon),llcrnrlat=np.min(lat),
+      urcrnrlon=np.max(lon),urcrnrlat=np.max(lat))
     map.drawcoastlines()
     map.drawcountries()
     map.drawstates()
-    map.pcolormesh(wrf_lon,wrf_lat,precip[:,:],cmap='jet',vmin=0,vmax=1,latlon='true')
-    map.colorbar(location='bottom')
-    plt.title(('Precipitation (inches)'),fontsize=24,family='Helvetica')
+    map.pcolormesh(X,Y,dineof_chla[:,:],norm=LogNorm(vmin=0.01, vmax=100),                    cmap=cmocean.cm.algae,latlon='true')
+    map.drawparallels(parallels,labels=[1,0,0,0],fontsize=18)
+    map.drawmeridians(meridians,labels=[0,0,0,1],fontsize=18)
+    x_loc,y_loc = map(plot_loc[0], plot_loc[1])
+    map.plot(x_loc, y_loc, 'ro', fillstyle='none',markersize=24)   #location
+    tx_loc,ty_loc = map(-79.9, 37.5)
+    plt.text(tx_loc,ty_loc,''.join([dineof_chla_loc,'mg/m$^3$']),fontsize=36,fontweight='bold',color='r')   #location    plt.title(('Cloud Free Chl-a (mg/m$^3$)'),fontsize=24,family='Helvetica')
+    cbar=map.colorbar(location='right',norm=LogNorm(vmin=0.01, vmax=100),                      ticks=[0.01,0.1,1,10,100])
+    cbar.ax.tick_params(labelsize=20)
 
-    plt.subplot(2,3,5)
-    map = Basemap(projection='merc',
-        resolution='c',lat_0=((np.max(wrf_lat)-np.min(wrf_lat))/2),
-        lon_0=((np.max(wrf_lon)-np.min(wrf_lon))/2),
-        llcrnrlon=np.min(wrf_lon),llcrnrlat=np.min(wrf_lat),
-        urcrnrlon=np.max(wrf_lon),urcrnrlat=np.max(wrf_lat))
-    map.drawcoastlines()
-    map.drawcountries()
-    map.drawstates()
-    map.pcolormesh(wrf_lon,wrf_lat,mdbz[:,:],cmap='jet',vmin=0,vmax=50,latlon='true')
-    map.colorbar(location='bottom')
-    plt.title(('Sim. Radar Reflectivity (dBZ)'),fontsize=24,family='Helvetica')
-
-    plt.subplot(2,3,6)
-    map = Basemap(projection='merc',
-        resolution='c',lat_0=((np.max(wrf_lat)-np.min(wrf_lat))/2),
-        lon_0=((np.max(wrf_lon)-np.min(wrf_lon))/2),
-        llcrnrlon=np.min(wrf_lon),llcrnrlat=np.min(wrf_lat),
-        urcrnrlon=np.max(wrf_lon),urcrnrlat=np.max(wrf_lat))
-    map.drawcoastlines()
-    map.drawcountries()
-    map.drawstates()
-    map.pcolormesh(roms_lon,roms_lat,wave[:,:],cmap='jet',vmin=0,vmax=10,latlon='true')
-    map.colorbar(location='bottom')
-    plt.title(('Sig. Wave Height (m)'),fontsize=24,family='Helvetica')
-
-    # Save image
-    plt.savefig('matthew_'+ str(t).zfill(2))
+    plt.savefig('ncroep_' + curr_date.strftime("%Y%m%d") + '.png')
 
 
